@@ -128,16 +128,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-
-
 USE_I18N = True
-
 
 TIME_ZONE = 'America/Chicago'
 
 USE_TZ = True  # Keep this True to use Django's time zone aware datetime objects
-
-
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
@@ -145,8 +140,8 @@ USE_TZ = True  # Keep this True to use Django's time zone aware datetime objects
 STATIC_URL = 'static/'
 # Media settings
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # CKEditor 5 specific upload path
 CKEDITOR_UPLOAD_PATH = 'uploads/'
 
