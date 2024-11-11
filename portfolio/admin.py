@@ -12,6 +12,7 @@ class CollegeItemAdmin(admin.ModelAdmin):
     search_fields = ('college', 'major', 'year')
     ordering = ['order']
 
+
 @admin.register(Chip)
 class ChipAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'order')
@@ -19,6 +20,7 @@ class ChipAdmin(admin.ModelAdmin):
     list_editable = ('order',)
     search_fields = ('name',)
     ordering = ['order']
+
 
 @admin.register(ProjectItem)
 class ProjectItemAdmin(admin.ModelAdmin):
@@ -31,11 +33,13 @@ class ProjectItemAdmin(admin.ModelAdmin):
 
     def get_chips(self, obj):
         return ", ".join([chip.name for chip in obj.chips.all()])
+
     get_chips.short_description = 'Chips'
+
 
 @admin.register(BlogItem)
 class BlogItemAdmin(admin.ModelAdmin):
-    list_display = ('id', 'title', 'redirect', 'get_chips', 'order')
+    list_display = ('id', 'title', 'redirect', 'get_chips', 'order', 'is_active')
     list_display_links = ('id', 'title')
     list_editable = ('order',)
     search_fields = ('title', 'description')
@@ -44,12 +48,14 @@ class BlogItemAdmin(admin.ModelAdmin):
 
     def get_chips(self, obj):
         return ", ".join([chip.name for chip in obj.chips.all()])
+
     get_chips.short_description = 'Chips'
 
 
 class WorkExperienceTaskInline(admin.TabularInline):
     model = WorkExperienceTask
     extra = 1
+
 
 @admin.register(WorkExperience)
 class WorkExperienceAdmin(admin.ModelAdmin):
@@ -60,6 +66,7 @@ class WorkExperienceAdmin(admin.ModelAdmin):
     filter_horizontal = ('skills',)
     ordering = ['order']
     inlines = [WorkExperienceTaskInline]
+
 
 admin.site.register(Profile)
 

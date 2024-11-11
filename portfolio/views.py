@@ -32,11 +32,11 @@ class WorkExperienceList(generics.ListAPIView):
 class CombinedDataView(APIView):
     def get(self, request, format=None):
         colleges = CollegeItem.objects.all().order_by('order')
-        projects = ProjectItem.objects.all().order_by('order')
-        blogs = BlogItem.objects.all().order_by('order')
+        projects = ProjectItem.objects.filter(is_active=True).order_by('order')
+        blogs = BlogItem.objects.filter(is_active=True).order_by('order')
         work_experiences = WorkExperience.objects.prefetch_related('skills', 'tasks').order_by('order')
         profile = Profile.objects.first()
-        technologies = Technology.objects.all()  # Fetch all technologies
+        technologies = Technology.objects.filter(is_active=True)  # Fetch all technologies
 
         data = {
             'colleges': CollegeItemSerializer(colleges, many=True).data,

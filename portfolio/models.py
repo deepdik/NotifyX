@@ -3,7 +3,6 @@
 from django.db import models
 
 
-
 class Profile(models.Model):
     name = models.CharField(max_length=255)
     about_me = models.TextField()
@@ -57,7 +56,6 @@ class WorkExperienceTask(models.Model):
         ordering = ['id']
 
 
-
 class CollegeItem(models.Model):
     college = models.CharField(max_length=255)
     major = models.CharField(max_length=255)
@@ -71,15 +69,13 @@ class CollegeItem(models.Model):
         ordering = ['order']  # Default ordering by 'order' field
 
 
-
-
-
 class ProjectItem(models.Model):
     title = models.CharField(max_length=255)
     banner_image = models.FileField(upload_to='project_banners/', blank=True, null=True)
     description = models.TextField()
     chips = models.ManyToManyField(Chip)
     order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=False)
 
     def __str__(self):
         return self.title
@@ -95,6 +91,7 @@ class BlogItem(models.Model):
     chips = models.ManyToManyField(Chip)
     redirect = models.URLField()
     order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=False)
 
     def __str__(self):
         return self.title
@@ -103,10 +100,10 @@ class BlogItem(models.Model):
         ordering = ['order']
 
 
-
 class Technology(models.Model):
     name = models.CharField(max_length=100)
     file = models.FileField(upload_to='technology_files/')  # Change ImageField to FileField
+    is_active = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name

@@ -97,4 +97,4 @@ class SendEmailCronJob(CronJobBase):
         """Send an alert email when an email fails 3 times."""
         alert_subject = f"Email failed 3 times for {reminder.subject}"
         alert_message = f"Email to {reminder.recipients if hasattr(reminder, 'recipients') else reminder.recipient} failed 3 times. Please investigate."
-        send_reminder_email('deep.kumar2052@gmail.com', alert_subject, f"<p>{alert_message}</p>", alert_message)
+        send_reminder_email(settings.EMAIL_HOST_USER, alert_subject, f"<p>{alert_message}</p>", alert_message)

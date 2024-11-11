@@ -15,6 +15,7 @@ class WorkExperienceTaskSerializer(serializers.ModelSerializer):
         model = WorkExperienceTask
         fields = ['description']
 
+
 class WorkExperienceSerializer(serializers.ModelSerializer):
     skills = serializers.SlugRelatedField(
         many=True,
@@ -29,6 +30,7 @@ class WorkExperienceSerializer(serializers.ModelSerializer):
 
     def get_tasks(self, obj):
         return obj.tasks.values_list('description', flat=True)
+
 
 class CollegeItemSerializer(serializers.ModelSerializer):
     class Meta:
@@ -47,7 +49,6 @@ class ProjectItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectItem
         fields = ['id', 'title', 'bannerImage', 'description', 'chips', 'order']
-
 
 
 class BlogItemSerializer(serializers.ModelSerializer):
@@ -100,5 +101,3 @@ class CombinedDataSerializer(serializers.Serializer):
     blogs = BlogItemSerializer(many=True)
     work_experiences = WorkExperienceSerializer(many=True)
     profile = ProfileSerializer()
-
-

@@ -37,7 +37,7 @@ SECRET_KEY = env('DJANGO_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['152.67.8.124']
+ALLOWED_HOSTS = ['152.67.8.124', 'localhost']
 
 
 # Application definition
@@ -166,5 +166,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CRON_LOG_FILE = 'django_cron.log'
 EMAIL_HOST_USER = env('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
+# DJANGO_CRON_LOCK_BACKEND = 'django_cron.backends.lock.backends.cache'
 
 
