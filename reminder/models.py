@@ -71,7 +71,7 @@ class ColdEmailReminder(models.Model):
         # "no_reminder"
         if self.reminder_frequency != 'no_reminder' and not self.reminder_template:
             raise ValidationError(
-                "You must provide either a plain reminder template or a markdown reminder template when setting a "
+                "You must a markdown reminder template when setting a "
                 "reminder.")
 
     def save(self, *args, **kwargs):
@@ -85,7 +85,6 @@ class ColdEmailReminder(models.Model):
     def should_send_email(self):
         """Determine if the email should be sent based on schedule or instant send options."""
         now = timezone.localtime(timezone.now())  # Use local time
-
         # Instant send logic
         if self.instant_send and not self.email_already_sent():
             return True, 'main_email'
@@ -105,7 +104,6 @@ class ColdEmailReminder(models.Model):
         """Check if a reminder should be sent based on reminder_frequency and reminder_time."""
         if self.reminder_frequency == 'same_day':
             # Send reminder only once on the same day
-            print(self.reminder_already_sent_today())
             if now.time() >= self.reminder_time and not self.reminder_already_sent_today():
                 return True
 
@@ -199,7 +197,7 @@ class ColdEmailLog(models.Model):
     sent_date = models.DateField()  # Track the date when the email was sent
     sent_time = models.TimeField(auto_now_add=True)  # Track the time when the email was sent
     is_reminder = models.BooleanField(default=False)  # Track whether this was a reminder
-    deactivate = models.BooleanField(default=False)
+
 
     def __str__(self):
         return f"Email for {self.email_reminder.subject} sent on {self.sent_date} at {self.sent_time}"
@@ -209,7 +207,14 @@ class PersonalEmailReminder(models.Model):
     recipient = models.EmailField()
     subject = models.CharField(max_length=255)
     body = RichTextUploadingField()
-    scheduled_time = models.DateTimeField(null=True, blank=True)  # For one-time scheduling
+
+    scheduled_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="For one-time Email only. Choose this if the email is to be sent at a specific date and time."
+    )
+
+    # Recurring email based on the day of the week
     scheduled_day_of_week = models.CharField(
         max_length=10,
         choices=[
@@ -223,16 +228,39 @@ class PersonalEmailReminder(models.Model):
             ('All days', 'All days')
         ],
         null=True,
-        blank=True
+        blank=True,
+        help_text="For recurring emails. Select the day(s) of the week on which to send the email."
     )
-    scheduled_time_of_day = models.TimeField(null=True,
-                                             blank=True)  # Time of day to send if a day of the week is selected
+
+    # Time of day for recurring emails
+    scheduled_time_of_day = models.TimeField(
+        null=True,
+        blank=True,
+        help_text="Time of day to send the email if a recurring day is selected."
+    )
+
     created_at = models.DateTimeField(default=timezone.now)
     sent_count = models.IntegerField(default=0)  # Track how many times the email has been sent
     failure_count = models.IntegerField(default=0)  # Track consecutive failures
+    deactivate = models.BooleanField(default=False)
+
+    def clean(self):
+        # Ensure that either `scheduled_time` or `scheduled_day_of_week` is selected, but not both
+        if self.scheduled_time and self.scheduled_day_of_week:
+            raise ValidationError("You cannot select both 'Scheduled Time' and 'Scheduled Day of Week'. Choose one.")
+
+        if not self.scheduled_time and not self.scheduled_day_of_week:
+            raise ValidationError("You must select either 'Scheduled Time' for a one-time email or 'Scheduled Day of Week' for recurring emails.")
+
+        # If `scheduled_day_of_week` is selected, `scheduled_time_of_day` must be selected
+        if self.scheduled_day_of_week and not self.scheduled_time_of_day:
+            raise ValidationError("When selecting 'Scheduled Day of Week', you must also select 'Scheduled Time of Day'.")
+
+        super().clean()
 
     def __str__(self):
-        return self.subject
+        return f"Email Schedule: {self.scheduled_time or self.scheduled_day_of_week}"
+
 
     def should_send_email(self):
         """Determine if the email should be sent based on schedule or day of the week."""
@@ -240,16 +268,22 @@ class PersonalEmailReminder(models.Model):
         now_utc = timezone.now()
         # Convert it to the local time zone (America/Chicago)
         now = timezone.localtime(now_utc)
-        print(now)
         # If scheduled for a specific date and it hasn't been sent, send it
+        print(now)
+        # print(now >= self.scheduled_time )
+        print(self.sent_count)
+        print(self.email_already_sent())
         if self.scheduled_time and now >= self.scheduled_time and self.sent_count == 0:
+            print("outside ", self.email_already_sent())
             return not self.email_already_sent()
 
         # If scheduled for a specific day of the week and hasn't been sent, send it
         if self.scheduled_day_of_week:
-            print(now.strftime('%A'))
             if self.scheduled_day_of_week == 'All days' or now.strftime('%A') == self.scheduled_day_of_week:
+                print("inside ", self.scheduled_time_of_day)
+                print("inside ", now.time())
                 if self.scheduled_time_of_day and now.time() >= self.scheduled_time_of_day:
+                    print("inside ", self.email_already_sent())
                     return not self.email_already_sent()
 
         return False

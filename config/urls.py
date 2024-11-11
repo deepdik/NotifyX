@@ -23,6 +23,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('markdownx/', include('markdownx.urls')),  # Markdownx URLs (if you're still using it)
     path('ckeditor/', include('ckeditor_uploader.urls')),  # CKEditor 5 URLs for uploading
+    path('api/portfolio/', include('portfolio.urls')),
 ]
 
 # Serving media files during development

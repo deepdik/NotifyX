@@ -18,3 +18,13 @@ services:
     restart: "on-failure"
     environment:
       - ENV=DEV
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh -c "while true; do python manage.py runcrons --force; sleep 60; done"
+    volumes:
+      - .:/app
+    environment:
+      - ENV=DEV

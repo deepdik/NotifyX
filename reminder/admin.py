@@ -14,7 +14,7 @@ class ColdEmailReminderAdmin(MarkdownxModelAdmin):
     readonly_fields = ('sent_count', 'failure_count', 'created_at', 'reminder_count')
     fields = (
         'recipients', 'subject', 'body', 'reminder_template', 'instant_send', 'scheduled_time', 'reminder_frequency',
-        'reminder_time', 'max_reminders', 'sent_count', 'failure_count', 'created_at', 'reminder_count', )
+        'reminder_time', 'max_reminders', 'sent_count', 'failure_count', 'created_at', 'reminder_count', 'deactivate')
 
 
 # Registering ColdEmailLog
@@ -37,7 +37,7 @@ class PersonalEmailReminderAdmin(MarkdownxModelAdmin):
     fields = (
         'recipient', 'subject', 'body', 'scheduled_time', 'scheduled_day_of_week', 'scheduled_time_of_day',
         'sent_count',
-        'failure_count', 'created_at')
+        'failure_count', 'created_at', 'deactivate')
 
 
 # Registering PersonalEmailLog

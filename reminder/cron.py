@@ -35,8 +35,8 @@ def send_reminder_email(receiver_email, subject, body_html=None, body_plain=None
 
     # Send the email
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-        server.login(sender_email, sender_password)  # Uncomment for actual use
-        server.sendmail(sender_email, receiver_email, msg.as_string())  # Uncomment for actual use
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, receiver_email, msg.as_string())
         print("######## Email Sent Successfully #######")
 
 
@@ -49,9 +49,9 @@ class SendEmailCronJob(CronJobBase):
     def do(self):
         # Handle ColdEmailReminders
         cold_reminders = ColdEmailReminder.objects.filter(deactivate=False)
+        print("cold email", len(cold_reminders))
         for reminder in cold_reminders:
             should_send, mail_type = reminder.should_send_email()  # Get whether to send and mail type
-
             if should_send:
                 try:
                     # Use the appropriate email body for reminders or main emails
@@ -78,8 +78,12 @@ class SendEmailCronJob(CronJobBase):
 
         # Handle PersonalEmailReminders
         personal_reminders = PersonalEmailReminder.objects.filter(deactivate=False)
+        print("personal email", len(personal_reminders))
         for reminder in personal_reminders:
+            print("personal email")
+            # print("reminder.should_send_email()" + reminder.should_send_email())
             if reminder.should_send_email():
+                print("sending personal email...")
                 try:
                     send_reminder_email(reminder.recipient, reminder.subject, reminder.body)
                     reminder.log_email_sent()  # Log success
