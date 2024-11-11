@@ -6,11 +6,12 @@ from django_cron import CronJobBase, Schedule
 from .models import ColdEmailReminder, PersonalEmailReminder
 import markdown  # To convert markdown to HTML
 
+from django.conf import  settings
 
 def send_reminder_email(receiver_email, subject, body_html=None, body_plain=None):
     # Your Gmail credentials
-    sender_email = "dk5f1995@gmail.com"
-    sender_password = "dexh vzvb geoz fqgc"  # Use an App Password if you have 2FA enabled
+    sender_email = settings.EMAIL_HOST_USER
+    sender_password = settings.EMAIL_HOST_PASSWORD  # Use an App Password if you have 2FA enabled
 
     # Create the email message
     msg = EmailMessage()
