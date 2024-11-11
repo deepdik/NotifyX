@@ -8,7 +8,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: notify_x
-    command: sh -c "python manage.py runserver 0.0.0.0:8010"
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8010"
     volumes:
       - ./:/app
       - ./static:/app/static
