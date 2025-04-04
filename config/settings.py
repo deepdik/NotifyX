@@ -146,7 +146,7 @@ USE_TZ = True  # Keep this True to use Django's time zone aware datetime objects
 
 # Static files (CSS, JavaScript, images)
 STATIC_URL = '/static/'
-
+FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024
 # Directory where collected static files are stored in production
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
