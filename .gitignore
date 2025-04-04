@@ -2,3 +2,4 @@ db.sqlite3
 .env
 __pycache__/
 ../.idea
+/config/client_secret.json
