@@ -12,3 +12,9 @@ Markdown==3.7
 pillow==11.0.0
 pytz==2024.2
 sqlparse==0.5.1
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+watchfiles
+

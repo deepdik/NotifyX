@@ -6,6 +6,33 @@ from django.db import models
 from ckeditor.fields import RichTextField
 from ckeditor_uploader.fields import RichTextUploadingField
 
+from .gmail_api import check_reply_received
+
+
+class SubjectTemplate(models.Model):
+    subject = models.CharField(
+        max_length=255,
+        help_text="Reusable subject line for emails."
+    )
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Mark this subject as default."
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Subject Template"
+        verbose_name_plural = "Subject Templates"
+
+    def __str__(self):
+        return f"{self.subject}{' [Default]' if self.is_default else ''}"
+
+    def clean(self):
+        # Only one default allowed
+        if self.is_default:
+            SubjectTemplate.objects.exclude(pk=self.pk).update(is_default=False)
 
 class ColdEmailReminder(models.Model):
     RECIPIENT_REMINDER_OPTIONS = [
@@ -24,7 +51,9 @@ class ColdEmailReminder(models.Model):
     )  # Comma-separated email list
     subject = models.CharField(
         max_length=255,
-        help_text="Enter the subject of the email."
+        help_text="Enter the subject of the email.",
+        blank = True,
+        null=True
     )
     body = RichTextUploadingField(
         blank=True,
@@ -66,30 +95,109 @@ class ColdEmailReminder(models.Model):
     reminder_failure_count = models.IntegerField(default=0)  # Track failures for reminder emails
     deactivate = models.BooleanField(default=False)
 
+    main_message_template = models.ForeignKey(
+        'MessageTemplate',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        limit_choices_to={'message_type': 'main'},
+        related_name='main_reminders',
+        help_text="Select a reusable message template for the main email."
+    )
+
+    reminder_message_template = models.ForeignKey(
+        'MessageTemplate',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        limit_choices_to={'message_type': 'reminder'},
+        related_name='reminder_reminders',
+        help_text="Select a reusable message template for reminder emails."
+    )
+
+    subject_template = models.ForeignKey(
+        'SubjectTemplate',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='email_reminders',
+        help_text="Choose a predefined subject template."
+    )
+
     def clean(self):
-        # Validate that reminder_template or plain_reminder_template is required if reminder_frequency is not
-        # "no_reminder"
-        if self.reminder_frequency != 'no_reminder' and not self.reminder_template:
-            raise ValidationError(
-                "You must a markdown reminder template when setting a "
-                "reminder.")
+        errors = {}
+
+        # Enforce either body or main message template is set
+        if not self.body and not self.main_message_template:
+            errors['body'] = "You must provide either a message body or select a main message template."
+
+        # Enforce either subject or subject template is set
+        if not self.subject and not self.subject_template:
+            errors['subject'] = "You must provide either a subject or select a subject template."
+
+        # Reminder content must be provided if reminder is enabled
+        if self.reminder_frequency != 'no_reminder':
+            if not self.reminder_template and not self.reminder_message_template:
+                errors['reminder_template'] = (
+                    "You must provide a reminder body or select a reminder message template if reminders are enabled."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+        super().clean()
 
     def save(self, *args, **kwargs):
-        # Call the clean method to validate before saving
-        self.clean()
+        if ',' in self.recipients:
+            recipients = [email.strip() for email in self.recipients.split(',')]
+            for email in recipients:
+                ColdEmailReminder.objects.create(
+                    recipients=email,
+                    subject=self.subject,
+                    body=self.body,
+                    reminder_template=self.reminder_template,
+                    instant_send=self.instant_send,
+                    scheduled_time=self.scheduled_time,
+                    reminder_frequency=self.reminder_frequency,
+                    reminder_time=self.reminder_time,
+                    max_reminders=self.max_reminders,
+                )
+            return  # Prevent saving original instance
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.subject
+        return str(self.id)
+
+    # def should_send_email(self):
+    #     """Determine if the email should be sent based on schedule or instant send options."""
+    #     now = timezone.localtime(timezone.now())  # Use local time
+    #     # Instant send logic
+    #     if self.instant_send and not self.email_already_sent():
+    #         return True, 'main_email'
+    #
+    #     # Scheduled send logic
+    #     if self.scheduled_time and now >= self.scheduled_time and not self.email_already_sent():
+    #         return True, 'main_email'
+    #
+    #     # Reminder send logic
+    #     if self.reminder_frequency != 'no_reminder' and self.reminder_count < self.max_reminders:
+    #         if self.reminder_should_be_sent(now):
+    #             return True, 'reminder'
+    #
+    #     return False, None  # If no email needs to be sent
 
     def should_send_email(self):
-        """Determine if the email should be sent based on schedule or instant send options."""
-        now = timezone.localtime(timezone.now())  # Use local time
-        # Instant send logic
+        now = timezone.localtime(timezone.now())
+        last_log = ColdEmailLog.objects.filter(email_reminder=self).order_by('-sent_date').first()
+
+        # if last_log and last_log.message_id:
+        #     if check_reply_received(last_log.message_id):
+        #         print("Reply detected, skipping reminder.")
+        #         return False, None
+
         if self.instant_send and not self.email_already_sent():
             return True, 'main_email'
 
-        # Scheduled send logic
         if self.scheduled_time and now >= self.scheduled_time and not self.email_already_sent():
             return True, 'main_email'
 
@@ -98,7 +206,7 @@ class ColdEmailReminder(models.Model):
             if self.reminder_should_be_sent(now):
                 return True, 'reminder'
 
-        return False, None  # If no email needs to be sent
+        return False, None
 
     def reminder_should_be_sent(self, now):
         """Check if a reminder should be sent based on reminder_frequency and reminder_time."""
@@ -156,17 +264,22 @@ class ColdEmailReminder(models.Model):
         past_date = now.date() - timezone.timedelta(weeks=1)
         return self.sent_on_date(past_date)
 
-    def log_email_sent(self, is_reminder=False):
+    def log_email_sent(self, is_reminder=False, message_id=None):
         """Log the email as sent by creating a ColdEmailLog entry."""
         now = timezone.localtime(timezone.now())
-        ColdEmailLog.objects.create(email_reminder=self, sent_date=now.date(), is_reminder=is_reminder)
+        ColdEmailLog.objects.create(
+            email_reminder=self,
+            sent_date=now.date(),
+            is_reminder=is_reminder,
+            message_id=message_id
+        )
 
         if is_reminder:
             self.reminder_count += 1
-            self.reminder_failure_count = 0  # Reset failure count for reminders
+            self.reminder_failure_count = 0
         else:
             self.sent_count += 1
-            self.failure_count = 0  # Reset failure count for main email
+            self.failure_count = 0
         self.save()
 
     def log_email_failed(self, is_reminder=False):
@@ -194,85 +307,103 @@ class ColdEmailReminder(models.Model):
 
 class ColdEmailLog(models.Model):
     email_reminder = models.ForeignKey('ColdEmailReminder', on_delete=models.CASCADE)
-    sent_date = models.DateField()  # Track the date when the email was sent
-    sent_time = models.TimeField(auto_now_add=True)  # Track the time when the email was sent
-    is_reminder = models.BooleanField(default=False)  # Track whether this was a reminder
-
+    sent_date = models.DateField()
+    sent_time = models.TimeField(auto_now_add=True)
+    is_reminder = models.BooleanField(default=False)
+    message_id = models.CharField(max_length=255, null=True, blank=True)  # Store Message-ID
 
     def __str__(self):
         return f"Email for {self.email_reminder.subject} sent on {self.sent_date} at {self.sent_time}"
 
 
 class PersonalEmailReminder(models.Model):
-    recipient = models.EmailField()
-    subject = models.CharField(max_length=255)
-    body = RichTextUploadingField()
-
-    scheduled_time = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="For one-time Email only. Choose this if the email is to be sent at a specific date and time."
+    # Existing fields...
+    recipient = models.EmailField(
+        help_text="Used only if Email or Both is selected.",
+        blank=True
     )
 
-    # Recurring email based on the day of the week
+    subject = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Used if a subject template is not selected."
+    )
+    subject_template = models.ForeignKey(
+        SubjectTemplate,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='personal_reminders',
+        help_text="Select a predefined subject template. Takes precedence over the custom subject field."
+    )
+    body = RichTextUploadingField()
+
+    notification_method = models.CharField(
+        max_length=10,
+        choices=[
+            ('email', 'Email Only'),
+            ('telegram', 'Telegram Only'),
+            ('both', 'Email and Telegram'),
+        ],
+        default='email',
+        help_text="Choose how you want to be notified."
+    )
+
+    scheduled_time = models.DateTimeField(null=True, blank=True)
     scheduled_day_of_week = models.CharField(
         max_length=10,
         choices=[
-            ('Monday', 'Monday'),
-            ('Tuesday', 'Tuesday'),
-            ('Wednesday', 'Wednesday'),
-            ('Thursday', 'Thursday'),
-            ('Friday', 'Friday'),
-            ('Saturday', 'Saturday'),
-            ('Sunday', 'Sunday'),
-            ('All days', 'All days')
+            ('Monday', 'Monday'), ('Tuesday', 'Tuesday'), ('Wednesday', 'Wednesday'),
+            ('Thursday', 'Thursday'), ('Friday', 'Friday'),
+            ('Saturday', 'Saturday'), ('Sunday', 'Sunday'), ('All days', 'All days')
         ],
         null=True,
-        blank=True,
-        help_text="For recurring emails. Select the day(s) of the week on which to send the email."
+        blank=True
     )
-
-    # Time of day for recurring emails
-    scheduled_time_of_day = models.TimeField(
-        null=True,
-        blank=True,
-        help_text="Time of day to send the email if a recurring day is selected."
-    )
+    scheduled_time_of_day = models.TimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(default=timezone.now)
-    sent_count = models.IntegerField(default=0)  # Track how many times the email has been sent
-    failure_count = models.IntegerField(default=0)  # Track consecutive failures
+    sent_count = models.IntegerField(default=0)
+    failure_count = models.IntegerField(default=0)
     deactivate = models.BooleanField(default=False)
 
     def clean(self):
-        # Ensure that either `scheduled_time` or `scheduled_day_of_week` is selected, but not both
+        errors = {}
+
         if self.scheduled_time and self.scheduled_day_of_week:
-            raise ValidationError("You cannot select both 'Scheduled Time' and 'Scheduled Day of Week'. Choose one.")
+            errors['scheduled_time'] = "You cannot select both 'Scheduled Time' and 'Scheduled Day of Week'."
 
         if not self.scheduled_time and not self.scheduled_day_of_week:
-            raise ValidationError("You must select either 'Scheduled Time' for a one-time email or 'Scheduled Day of Week' for recurring emails.")
+            errors['scheduled_time'] = "You must select either 'Scheduled Time' or 'Scheduled Day of Week'."
 
-        # If `scheduled_day_of_week` is selected, `scheduled_time_of_day` must be selected
         if self.scheduled_day_of_week and not self.scheduled_time_of_day:
-            raise ValidationError("When selecting 'Scheduled Day of Week', you must also select 'Scheduled Time of Day'.")
+            errors['scheduled_time_of_day'] = "Time of day must be set for recurring reminders."
+
+        if self.notification_method in ['email', 'both'] and not self.recipient:
+            errors['recipient'] = "Recipient email is required for Email or Both notification method."
+
+        if not self.subject and not self.subject_template:
+            errors['subject'] = "Either a custom subject or a subject template must be selected."
+
+        if errors:
+            raise ValidationError(errors)
 
         super().clean()
 
+    def get_subject(self):
+        return self.subject_template.subject if self.subject_template else self.subject
+
     def __str__(self):
-        return f"Email Schedule: {self.scheduled_time or self.scheduled_day_of_week}"
+        return f"Reminder: {self.get_subject()} via {self.notification_method}"
 
 
-    def should_send_email(self):
+    def should_send_notification(self):
         """Determine if the email should be sent based on schedule or day of the week."""
         # Get the current time in UTC
         now_utc = timezone.now()
         # Convert it to the local time zone (America/Chicago)
         now = timezone.localtime(now_utc)
         # If scheduled for a specific date and it hasn't been sent, send it
-        print(now)
-        # print(now >= self.scheduled_time )
-        print(self.sent_count)
-        print(self.email_already_sent())
         if self.scheduled_time and now >= self.scheduled_time and self.sent_count == 0:
             print("outside ", self.email_already_sent())
             return not self.email_already_sent()
@@ -292,7 +423,7 @@ class PersonalEmailReminder(models.Model):
         """Check if the email has already been sent."""
         return PersonalEmailLog.objects.filter(email_reminder=self).exists()
 
-    def log_email_sent(self):
+    def log_notification_sent(self):
         """Log the email as sent."""
         now_utc = timezone.now()
         # Convert it to the local time zone (America/Chicago)
@@ -315,3 +446,43 @@ class PersonalEmailLog(models.Model):
 
     def __str__(self):
         return f"Personal email for {self.email_reminder.subject} sent on {self.sent_date} at {self.sent_time}"
+
+
+
+class MessageTemplate(models.Model):
+    MESSAGE_TYPE_CHOICES = [
+        ('main', 'Main Email'),
+        ('reminder', 'Reminder Email'),
+    ]
+
+    title = models.CharField(max_length=255)
+    message = RichTextUploadingField()
+    is_default = models.BooleanField(default=False)
+    message_type = models.CharField(
+        max_length=10,
+        choices=MESSAGE_TYPE_CHOICES,
+        help_text="Is this for the main email or a reminder?"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Message Template"
+        verbose_name_plural = "Message Templates"
+
+    def __str__(self):
+        return f"{self.title} ({self.message_type}){' [Default]' if self.is_default else ''}"
+
+    def clean(self):
+        if self.is_default:
+            MessageTemplate.objects.filter(
+                message_type=self.message_type
+            ).exclude(pk=self.pk).update(is_default=False)
+
+
+
+
+
+
+

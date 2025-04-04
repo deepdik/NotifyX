@@ -1,45 +1,15 @@
+from django_cron import CronJobBase, Schedule
+
+from .bot import send_telegram_message
+from .mail import send_reminder_email
+from .models import ColdEmailReminder, PersonalEmailReminder, ColdEmailLog
 import smtplib
 import ssl
 from email.message import EmailMessage
-
-from django_cron import CronJobBase, Schedule
-from .models import ColdEmailReminder, PersonalEmailReminder
-import markdown  # To convert markdown to HTML
-
-from django.conf import  settings
-
-def send_reminder_email(receiver_email, subject, body_html=None, body_plain=None):
-    # Your Gmail credentials
-    sender_email = settings.EMAIL_HOST_USER
-    sender_password = settings.EMAIL_HOST_PASSWORD  # Use an App Password if you have 2FA enabled
-
-    # Create the email message
-    msg = EmailMessage()
-
-    # Check if body_plain is given; if not, only HTML email will be sent
-    if body_plain:
-        # If a plain text version is provided, set it as the main content
-        msg.set_content(body_plain)
-    else:
-        # If no plain text is provided, ensure body_html exists and convert to HTML
-        if body_html:
-            body_html = markdown.markdown(body_html)  # Convert Markdown to HTML
-            # Add the HTML version of the email
-            msg.add_alternative(body_html, subtype='html')
-
-    msg['Subject'] = subject
-    msg['From'] = sender_email
-    msg['To'] = receiver_email
-
-    # Setup the secure SSL context
-    context = ssl.create_default_context()
-
-    # Send the email
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, receiver_email, msg.as_string())
-        print("######## Email Sent Successfully #######")
-
+from email.utils import formataddr, make_msgid
+import markdown  # Ensure markdown is imported if you're using it for body_html conversion
+from django.conf import settings
+from django.utils.html import strip_tags
 
 class SendEmailCronJob(CronJobBase):
     RUN_EVERY_MINS = 60  # Adjust this based on your needs
@@ -51,26 +21,45 @@ class SendEmailCronJob(CronJobBase):
         # Handle ColdEmailReminders
         cold_reminders = ColdEmailReminder.objects.filter(deactivate=False)
         print("cold email", len(cold_reminders))
+
         for reminder in cold_reminders:
-            should_send, mail_type = reminder.should_send_email()  # Get whether to send and mail type
+            should_send, mail_type = reminder.should_send_email()
             if should_send:
                 try:
-                    # Use the appropriate email body for reminders or main emails
-                    if mail_type == 'reminder':
-                        send_reminder_email(
-                            reminder.recipients,
-                            reminder.subject,
-                            body_html=reminder.reminder_template
-                        )
-                    else:
-                        send_reminder_email(reminder.recipients, reminder.subject, body_html=reminder.body)
+                    original_message_id = None
+                    last_log = ColdEmailLog.objects.filter(email_reminder=reminder).order_by('-sent_date').first()
+                    if last_log:
+                        original_message_id = last_log.message_id
 
-                    # Log the email send as either a main email or a reminder
-                    reminder.log_email_sent(is_reminder=(mail_type == 'reminder'))  # Log success
+                    # Get subject
+                    subject = reminder.subject or (
+                        reminder.subject_template.subject if reminder.subject_template else ""
+                    )
+
+                    # Get body content based on type
+                    if mail_type == 'reminder':
+                        body_html = (
+                                reminder.reminder_template or
+                                (
+                                    reminder.reminder_message_template.message if reminder.reminder_message_template else "")
+                        )
+                    else:  # main_email
+                        body_html = (
+                                reminder.body or
+                                (reminder.main_message_template.message if reminder.main_message_template else "")
+                        )
+
+                    new_message_id = send_reminder_email(
+                        reminder.recipients,
+                        subject,
+                        body_html=body_html,
+                        original_message_id=original_message_id
+                    )
+                    reminder.log_email_sent(is_reminder=(mail_type == 'reminder'), message_id=new_message_id)
 
                 except Exception as e:
                     # Log the failure and handle failure count
-                    reminder.log_email_failed(is_reminder=(mail_type == 'reminder'))  # Log failure
+                    reminder.log_email_failed(is_reminder=(mail_type == 'reminder'))
 
                     # If failed more than 3 times, send an alert
                     if (mail_type == 'reminder' and reminder.reminder_failure_count >= 3) or \
@@ -79,17 +68,36 @@ class SendEmailCronJob(CronJobBase):
 
         # Handle PersonalEmailReminders
         personal_reminders = PersonalEmailReminder.objects.filter(deactivate=False)
-        print("personal email", len(personal_reminders))
+
         for reminder in personal_reminders:
-            print("personal email")
-            # print("reminder.should_send_email()" + reminder.should_send_email())
-            if reminder.should_send_email():
-                print("sending personal email...")
+
+            if reminder.should_send_notification():  # updated method name
                 try:
-                    send_reminder_email(reminder.recipient, reminder.subject, reminder.body)
-                    reminder.log_email_sent()  # Log success
+                    # Track if at least one notification succeeded
+                    success = False
+
+                    # Send email if needed
+                    if reminder.notification_method in ['email', 'both']:
+                        send_reminder_email(reminder.recipient, reminder.subject, reminder.body)
+                        success = True
+
+                    # Send Telegram message if needed
+                    if reminder.notification_method in ['telegram', 'both']:
+                        subject = reminder.subject if reminder.subject else reminder.subject_template.subject
+                        send_telegram_message(
+                            message=subject + ": " + strip_tags(reminder.body)
+                        )
+                        success = True
+
+                    if success:
+                        reminder.log_notification_sent()
+                    else:
+                        raise Exception("No notification method succeeded.")
+
                 except Exception as e:
-                    reminder.log_email_failed()  # Log failure
+                    print(f"Notification failed for reminder {reminder.id}: {e}")
+                    reminder.log_notification_failed()
+
                     if reminder.failure_count >= 3:
                         self.send_alert(reminder)
 
@@ -98,3 +106,6 @@ class SendEmailCronJob(CronJobBase):
         alert_subject = f"Email failed 3 times for {reminder.subject}"
         alert_message = f"Email to {reminder.recipients if hasattr(reminder, 'recipients') else reminder.recipient} failed 3 times. Please investigate."
         send_reminder_email(settings.EMAIL_HOST_USER, alert_subject, f"<p>{alert_message}</p>", alert_message)
+
+
+
