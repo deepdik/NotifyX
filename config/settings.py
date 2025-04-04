@@ -27,7 +27,6 @@ if os.path.exists(os.path.join(BASE_DIR, 'config/.env')):
 else:
     print(f"Warning: .env file not found at {os.path.join(BASE_DIR, 'config/.env')}")
 
-
 SECRET_KEY = env('DJANGO_SECRET_KEY')
 
 # Quick-start development settings - unsuitable for production
@@ -38,7 +37,6 @@ SECRET_KEY = env('DJANGO_SECRET_KEY')
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
-
 
 # Application definition
 
@@ -57,7 +55,8 @@ INSTALLED_APPS = [
     'ckeditor_uploader',  # For image uploads if needed
     'rest_framework',
     'portfolio',
-    'corsheaders'
+    'corsheaders',
+    'django_extensions'
 
 ]
 
@@ -79,7 +78,6 @@ MIDDLEWARE = [
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
@@ -100,7 +98,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
@@ -110,7 +107,6 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
-
 
 CRON_CLASSES = [
     'reminder.cron.SendEmailCronJob',
@@ -134,7 +130,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
@@ -149,7 +144,18 @@ USE_TZ = True  # Keep this True to use Django's time zone aware datetime objects
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
+# Static files (CSS, JavaScript, images)
+STATIC_URL = '/static/'
+
+# Directory where collected static files are stored in production
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Other directories where static files can be found (for development)
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
+# STATIC_URL = 'static/'
 # Media settings
 MEDIA_URL = '/media/'
 
@@ -166,10 +172,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CRON_LOG_FILE = 'django_cron.log'
 EMAIL_HOST_USER = env('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
+# SENDER_NAME = env("SENDER_NAME")
+# GMAIL_CREDENTIALS_FILE=env("GMAIL_CREDENTIALS_FILE")
+# DJANGO_CRON_LOCK_BACKEND = 'django_cron.backends.lock.backends.cache'
+
 SENDER_NAME = env("SENDER_NAME")
-GMAIL_CREDENTIALS_FILE=env("GMAIL_CREDENTIALS_FILE")
+GMAIL_CREDENTIALS_FILE = env("GMAIL_CREDENTIALS_FILE")
 BOT_TOKEN = env("BOT_TOKEN")
 CHAT_ID = env("CHAT_ID")
 # DJANGO_CRON_LOCK_BACKEND = 'django_cron.backends.lock.backends.cache'
-
-
