@@ -3,3 +3,6 @@ db.sqlite3
 __pycache__/
 ../.idea
 /config/client_secret.json
+/config/client_secret_prod.json
+token.pickle
+token_prod.pickle

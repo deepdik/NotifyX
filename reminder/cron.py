@@ -20,7 +20,6 @@ class SendEmailCronJob(CronJobBase):
     def do(self):
         # Handle ColdEmailReminders
         cold_reminders = ColdEmailReminder.objects.filter(deactivate=False)
-        print("cold email", len(cold_reminders))
 
         for reminder in cold_reminders:
             should_send, mail_type = reminder.should_send_email()
@@ -31,40 +30,45 @@ class SendEmailCronJob(CronJobBase):
                     if last_log:
                         original_message_id = last_log.message_id
 
-                    # Get subject
+                    # Subject
                     subject = reminder.subject or (
                         reminder.subject_template.subject if reminder.subject_template else ""
                     )
 
-                    # Get body content based on type
+                    # Body
                     if mail_type == 'reminder':
                         body_html = (
                                 reminder.reminder_template or
                                 (
                                     reminder.reminder_message_template.message if reminder.reminder_message_template else "")
                         )
-                    else:  # main_email
+                        resume_file_path = None  # No resume on reminders
+                    else:
                         body_html = (
                                 reminder.body or
                                 (reminder.main_message_template.message if reminder.main_message_template else "")
                         )
+                        # Resume for first email
+                        resume_file_path = reminder.resume.path if reminder.resume else (
+                            reminder.resume_template.file.path if reminder.resume_template else None
+                        )
 
                     new_message_id = send_reminder_email(
                         reminder.recipients,
-                        subject,
+                        subject=subject,
                         body_html=body_html,
-                        original_message_id=original_message_id
+                        original_message_id=original_message_id,
+                        resume_attachment_path=resume_file_path  # You must support this in your mail function
                     )
+
                     reminder.log_email_sent(is_reminder=(mail_type == 'reminder'), message_id=new_message_id)
 
                 except Exception as e:
-                    # Log the failure and handle failure count
+                    print(e)
                     reminder.log_email_failed(is_reminder=(mail_type == 'reminder'))
-
-                    # If failed more than 3 times, send an alert
-                    if (mail_type == 'reminder' and reminder.reminder_failure_count >= 3) or \
-                            (mail_type == 'main_email' and reminder.failure_count >= 3):
-                        self.send_alert(reminder)
+                    if (mail_type == 'reminder' and reminder.reminder_failure_count == 5) or \
+                            (mail_type == 'main_email' and reminder.failure_count == 5):
+                        self.send_alert(reminder.recipients, e)
 
         # Handle PersonalEmailReminders
         personal_reminders = PersonalEmailReminder.objects.filter(deactivate=False)
@@ -95,17 +99,17 @@ class SendEmailCronJob(CronJobBase):
                         raise Exception("No notification method succeeded.")
 
                 except Exception as e:
+                    print(e)
                     print(f"Notification failed for reminder {reminder.id}: {e}")
                     reminder.log_notification_failed()
 
-                    if reminder.failure_count >= 3:
-                        self.send_alert(reminder)
+                    if reminder.failure_count == 5:
+                        self.send_alert(reminder.recipient, e)
 
-    def send_alert(self, reminder):
+    def send_alert(self, subject, message):
         """Send an alert email when an email fails 3 times."""
-        alert_subject = f"Email failed 3 times for {reminder.subject}"
-        alert_message = f"Email to {reminder.recipients if hasattr(reminder, 'recipients') else reminder.recipient} failed 3 times. Please investigate."
-        send_reminder_email(settings.EMAIL_HOST_USER, alert_subject, f"<p>{alert_message}</p>", alert_message)
+        alert_subject = f"ALERT: Email failed 5 times"
+        send_reminder_email(settings.EMAIL_HOST_USER, alert_subject, message)
 
 
 

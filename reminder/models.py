@@ -2,11 +2,27 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from markdownx.models import MarkdownxField
 from django.db import models
-
+from django.conf import settings
 from ckeditor.fields import RichTextField
 from ckeditor_uploader.fields import RichTextUploadingField
 
 from .gmail_api import check_reply_received
+
+
+class Resume(models.Model):
+    title = models.CharField(max_length=255)
+    file = models.FileField(upload_to='resumes/')
+    is_default = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.title}{' [Default]' if self.is_default else ''}"
+
+    def clean(self):
+        if self.is_default:
+            Resume.objects.exclude(pk=self.pk).update(is_default=False)
 
 
 class SubjectTemplate(models.Model):
@@ -34,6 +50,7 @@ class SubjectTemplate(models.Model):
         if self.is_default:
             SubjectTemplate.objects.exclude(pk=self.pk).update(is_default=False)
 
+
 class ColdEmailReminder(models.Model):
     RECIPIENT_REMINDER_OPTIONS = [
         ('same_day', 'Same Day'),
@@ -52,7 +69,7 @@ class ColdEmailReminder(models.Model):
     subject = models.CharField(
         max_length=255,
         help_text="Enter the subject of the email.",
-        blank = True,
+        blank=True,
         null=True
     )
     body = RichTextUploadingField(
@@ -94,6 +111,8 @@ class ColdEmailReminder(models.Model):
     failure_count = models.IntegerField(default=0)  # Track consecutive failures for the main email
     reminder_failure_count = models.IntegerField(default=0)  # Track failures for reminder emails
     deactivate = models.BooleanField(default=False)
+    has_reply = models.BooleanField(default=False)
+    last_checked_for_reply = models.DateTimeField(null=True, blank=True)
 
     main_message_template = models.ForeignKey(
         'MessageTemplate',
@@ -123,19 +142,37 @@ class ColdEmailReminder(models.Model):
         related_name='email_reminders',
         help_text="Choose a predefined subject template."
     )
+    resume = models.FileField(
+        upload_to='custom_resumes/',
+        null=True,
+        blank=True,
+        help_text="Optionally upload a custom resume."
+    )
+
+    resume_template = models.ForeignKey(
+        'Resume',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        help_text="Or select a resume from the library."
+    )
 
     def clean(self):
         errors = {}
 
-        # Enforce either body or main message template is set
+        # Resume requirement (only for main email)
+        if not self.resume and not self.resume_template:
+            errors['resume'] = "You must upload a resume or select one from Resume Templates."
+
+        # Body or Template
         if not self.body and not self.main_message_template:
             errors['body'] = "You must provide either a message body or select a main message template."
 
-        # Enforce either subject or subject template is set
+        # Subject or Template
         if not self.subject and not self.subject_template:
             errors['subject'] = "You must provide either a subject or select a subject template."
 
-        # Reminder content must be provided if reminder is enabled
+        # Reminder
         if self.reminder_frequency != 'no_reminder':
             if not self.reminder_template and not self.reminder_message_template:
                 errors['reminder_template'] = (
@@ -168,32 +205,8 @@ class ColdEmailReminder(models.Model):
     def __str__(self):
         return str(self.id)
 
-    # def should_send_email(self):
-    #     """Determine if the email should be sent based on schedule or instant send options."""
-    #     now = timezone.localtime(timezone.now())  # Use local time
-    #     # Instant send logic
-    #     if self.instant_send and not self.email_already_sent():
-    #         return True, 'main_email'
-    #
-    #     # Scheduled send logic
-    #     if self.scheduled_time and now >= self.scheduled_time and not self.email_already_sent():
-    #         return True, 'main_email'
-    #
-    #     # Reminder send logic
-    #     if self.reminder_frequency != 'no_reminder' and self.reminder_count < self.max_reminders:
-    #         if self.reminder_should_be_sent(now):
-    #             return True, 'reminder'
-    #
-    #     return False, None  # If no email needs to be sent
-
     def should_send_email(self):
         now = timezone.localtime(timezone.now())
-        last_log = ColdEmailLog.objects.filter(email_reminder=self).order_by('-sent_date').first()
-
-        # if last_log and last_log.message_id:
-        #     if check_reply_received(last_log.message_id):
-        #         print("Reply detected, skipping reminder.")
-        #         return False, None
 
         if self.instant_send and not self.email_already_sent():
             return True, 'main_email'
@@ -210,6 +223,22 @@ class ColdEmailReminder(models.Model):
 
     def reminder_should_be_sent(self, now):
         """Check if a reminder should be sent based on reminder_frequency and reminder_time."""
+        now = timezone.localtime(timezone.now())
+
+        if self.has_reply:
+            return False, None
+
+        last_log = ColdEmailLog.objects.filter(email_reminder=self).order_by('-sent_date').first()
+        if last_log and last_log.message_id:
+            sender_email = settings.EMAIL_HOST_USER
+            if check_reply_received(last_log.message_id, sender_email):
+                self.has_reply = True
+                self.deactivate = True
+                self.save(update_fields=['has_reply', 'deactivate'])
+                print(f"Reply detected for {self.subject}, deactivating follow-ups.")
+                return False
+
+
         if self.reminder_frequency == 'same_day':
             # Send reminder only once on the same day
             if now.time() >= self.reminder_time and not self.reminder_already_sent_today():
@@ -225,6 +254,7 @@ class ColdEmailReminder(models.Model):
             return not self.reminder_already_sent_today()
         elif self.reminder_frequency == 'weekly' and self.sent_on_previous_week():
             return not self.reminder_already_sent_today()
+
         return False
 
     def email_already_sent(self):
@@ -297,12 +327,12 @@ class ColdEmailReminder(models.Model):
             self.notify_admin(failure_type='main_email')
 
     def notify_admin(self, failure_type='main_email'):
-        from NotifyX.reminder.cron import SendEmailCronJob
+        from .cron import SendEmailCronJob
         """Send an email notification to the admin if the email failed 3 times."""
         subject = f"Email Failure Alert: {self.subject}"
         message = f"The {failure_type} has failed 3 times. Please check the logs."
         # You can use Django's send_mail or any email-sending logic
-        SendEmailCronJob().send_alert()
+        SendEmailCronJob().send_alert(subject, message)
 
 
 class ColdEmailLog(models.Model):
@@ -396,7 +426,6 @@ class PersonalEmailReminder(models.Model):
     def __str__(self):
         return f"Reminder: {self.get_subject()} via {self.notification_method}"
 
-
     def should_send_notification(self):
         """Determine if the email should be sent based on schedule or day of the week."""
         # Get the current time in UTC
@@ -448,7 +477,6 @@ class PersonalEmailLog(models.Model):
         return f"Personal email for {self.email_reminder.subject} sent on {self.sent_date} at {self.sent_time}"
 
 
-
 class MessageTemplate(models.Model):
     MESSAGE_TYPE_CHOICES = [
         ('main', 'Main Email'),
@@ -479,10 +507,3 @@ class MessageTemplate(models.Model):
             MessageTemplate.objects.filter(
                 message_type=self.message_type
             ).exclude(pk=self.pk).update(is_default=False)
-
-
-
-
-
-
-

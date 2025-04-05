@@ -5,7 +5,7 @@ from .models import (
     PersonalEmailReminder,
     PersonalEmailLog,
     MessageTemplate,
-    SubjectTemplate
+    SubjectTemplate, Resume
 )
 from markdownx.admin import MarkdownxModelAdmin
 
@@ -24,9 +24,9 @@ class ColdEmailReminderAdmin(MarkdownxModelAdmin):
     fields = (
         'recipients', 'subject', 'subject_template', 'body', 'main_message_template',
         'reminder_template', 'reminder_message_template',
-        'instant_send', 'scheduled_time', 'reminder_frequency',
-        'reminder_time', 'max_reminders', 'sent_count', 'failure_count',
-        'created_at', 'reminder_count', 'deactivate'
+        'instant_send', 'scheduled_time', 'reminder_frequency', 'reminder_time',
+        'max_reminders', 'resume', 'resume_template',
+        'sent_count', 'failure_count', 'created_at', 'reminder_count', 'deactivate'
     )
 
     def display_subject(self, obj):
@@ -92,3 +92,12 @@ class SubjectTemplateAdmin(admin.ModelAdmin):
     list_filter = ('is_default',)
     readonly_fields = ('created_at', 'updated_at')
     fields = ('subject', 'is_default', 'created_at', 'updated_at')
+
+
+@admin.register(Resume)
+class ResumeAdmin(admin.ModelAdmin):
+    list_display = ('title', 'is_default', 'updated_at')
+    search_fields = ('title',)
+    list_filter = ('is_default',)
+    readonly_fields = ('created_at', 'updated_at')
+    fields = ('title', 'file', 'is_default', 'created_at', 'updated_at')

@@ -12,7 +12,7 @@ RUN apt-get update && \
 
 COPY requirements.txt requirements.txt
 RUN pip3 install -r requirements.txt
-
+RUN pip3 install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
 COPY . .
 
 # Add cron job (optional, you handle it separately)
