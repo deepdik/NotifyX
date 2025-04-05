@@ -27,7 +27,8 @@ def get_gmail_service():
                 SCOPES,
                 redirect_uri=REDIRECT_URI
             )
-            creds = flow.run_local_server(port=8000)
+            flow.run_console()
+            #creds = flow.run_local_server(port=8000)
 
         with open(settings.GMAIL_TOKEN_FILE, 'wb') as token:
             pickle.dump(creds, token)
