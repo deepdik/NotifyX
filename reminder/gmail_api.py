@@ -1,5 +1,4 @@
-from urllib.request import Request
-
+from google.auth.transport.requests import Request
 from django.conf import settings
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -27,8 +26,8 @@ def get_gmail_service():
                 SCOPES,
                 redirect_uri=REDIRECT_URI
             )
-            flow.run_console()
-            #creds = flow.run_local_server(port=8000)
+            # flow.run_console()
+            creds = flow.run_local_server(port=8000)
 
         with open(settings.GMAIL_TOKEN_FILE, 'wb') as token:
             pickle.dump(creds, token)
@@ -67,4 +66,4 @@ def check_reply_received(mess_id, sender_email):
 
     return False
 
-# check_reply_received("", "")
+check_reply_received("", "")
