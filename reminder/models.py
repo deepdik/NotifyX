@@ -224,38 +224,44 @@ class ColdEmailReminder(models.Model):
     def reminder_should_be_sent(self, now):
         """Check if a reminder should be sent based on reminder_frequency and reminder_time."""
         now = timezone.localtime(timezone.now())
-
+        should_send = False
         if self.has_reply:
-            return False, None
-
-        last_log = ColdEmailLog.objects.filter(email_reminder=self).order_by('-sent_date').first()
-        if last_log and last_log.message_id:
-            sender_email = settings.EMAIL_HOST_USER
-            if check_reply_received(last_log.message_id, sender_email):
-                self.has_reply = True
-                self.deactivate = True
-                self.save(update_fields=['has_reply', 'deactivate'])
-                print(f"Reply detected for {self.subject}, deactivating follow-ups.")
-                return False
-
+            return False
 
         if self.reminder_frequency == 'same_day':
             # Send reminder only once on the same day
             if now.time() >= self.reminder_time and not self.reminder_already_sent_today():
-                return True
+                should_send = True
 
         elif self.reminder_frequency == 'daily' and self.sent_on_previous_day():
-            return not self.reminder_already_sent_today()
-        elif self.reminder_frequency == 'after_1_day' and self.sent_days_ago(1):
-            return not self.reminder_already_sent_today()
-        elif self.reminder_frequency == 'after_2_days' and self.sent_days_ago(2):
-            return not self.reminder_already_sent_today()
-        elif self.reminder_frequency == 'after_3_days' and self.sent_days_ago(3):
-            return not self.reminder_already_sent_today()
-        elif self.reminder_frequency == 'weekly' and self.sent_on_previous_week():
-            return not self.reminder_already_sent_today()
+            if not self.reminder_already_sent_today():
+                should_send = True
 
-        return False
+        elif self.reminder_frequency == 'after_1_day' and self.sent_days_ago(1):
+            if not self.reminder_already_sent_today():
+                should_send = True
+        elif self.reminder_frequency == 'after_2_days' and self.sent_days_ago(2):
+            if not self.reminder_already_sent_today():
+                should_send = True
+        elif self.reminder_frequency == 'after_3_days' and self.sent_days_ago(3):
+            if not self.reminder_already_sent_today():
+                should_send = True
+        elif self.reminder_frequency == 'weekly' and self.sent_on_previous_week():
+            if not self.reminder_already_sent_today():
+                should_send = True
+
+        if should_send:
+            last_log = ColdEmailLog.objects.filter(email_reminder=self).order_by('-sent_date').first()
+            if last_log and last_log.message_id:
+                sender_email = settings.EMAIL_HOST_USER
+                if check_reply_received(last_log.message_id, sender_email):
+                    self.has_reply = True
+                    self.deactivate = True
+                    self.save(update_fields=['has_reply', 'deactivate'])
+                    print(f"Reply detected for {self.subject}, deactivating follow-ups.")
+                    return False
+
+        return should_send
 
     def email_already_sent(self):
         """Check if the main email has already been sent."""
