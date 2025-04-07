@@ -18,16 +18,21 @@ def get_gmail_service():
             creds = pickle.load(token)
 
     if not creds or not creds.valid:
+
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except:
+                print("[TOKEN ERROR] Refresh token is invalid or revoked, need re-auth")
+                creds = None  # Force re-auth
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
                 SERVICE_ACCOUNT_FILE,
                 SCOPES,
                 redirect_uri=REDIRECT_URI
             )
-            # flow.run_console()
-            creds = flow.run_local_server(port=8000)
+            #flow.run_console()
+            creds = flow.run_local_server(port=8000, access_type='offline', prompt='consent')
 
         with open(settings.GMAIL_TOKEN_FILE, 'wb') as token:
             pickle.dump(creds, token)
@@ -65,5 +70,3 @@ def check_reply_received(mess_id, sender_email):
         print(f"[GMAIL API ERROR] Failed to check reply: {e}")
 
     return False
-
-# check_reply_received("", "")
